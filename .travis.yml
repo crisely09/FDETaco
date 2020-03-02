@@ -45,7 +45,9 @@ install:
     # Activate the test environment
   - conda activate test
     # install pyscf
-  - pip install pyscf
+    #  - pip install pyscf
+  - conda config --append channels pyscf
+  - conda install pyscf
     # install QCElemental
   - pip install qcelemental
     # install pandas
