@@ -26,7 +26,7 @@ def test_embpotbase():
     mol0 = 'mol'
     mol1 = 'mol'
     emb_args = 'mol'
-    dict0 = {'mol': 0}
+    dict0 = {'mol': mol0}
     dict1 = {'xc_code': 'LDA'}
     with pytest.raises(TypeError):
         EmbPotBase(mol0, mol1, emb_args)
@@ -34,7 +34,7 @@ def test_embpotbase():
         EmbPotBase(mol0, mol1, dict0)
     with pytest.raises(KeyError):
         EmbPotBase(mol0, mol1, dict1)
-    dict2 = {'xc_code': 'XC_MGGA_C_CS', 't_code': 'PBE'}
+    dict2 = {'xc_code': 'MGGA_C_CS', 't_code': 'PBE'}
     dict3 = {'xc_code': 'PBE', 't_code': 'PBE'}
     with pytest.raises(NotImplementedError):
         EmbPotBase(mol0, mol1, dict2)
@@ -704,19 +704,19 @@ def compute_emb_kernel():
 
 if __name__ == "__main__":
     test_embpotbase()
-    test_pyscfembpot0()
-    test_pyscf_embpot_hf_co_h2o_sto3g()
-    test_pyscf_embpot_hf_co_h2o_sto3g_lyp()
-    test_scfwrap()
-    test_pyscf_wrap0()
-    test_pyscf_wrap_hf_co_h2o_sto3g()
-    test_pyscf_wrap_hf_co_h2o_sto3g_pbe()
-    test_pyscf_wrap_hf_co_h2o_sto3g_lyp()
-    test_pyscf_wrap_dft_co_h2o_sto3g()
-    test_scfwrap_single()
-    test_pyscf_wrap_single_co_h2o()
-    test_postscfwrap()
-    test_postscfwrap_co_h2o()
-    test_omolcas_wrap0()
-    test_omolcas_wrap_co_h2o_ccpvdz()
+#   test_pyscfembpot0()
+#   test_pyscf_embpot_hf_co_h2o_sto3g()
+#   test_pyscf_embpot_hf_co_h2o_sto3g_lyp()
+#   test_scfwrap()
+#   test_pyscf_wrap0()
+#   test_pyscf_wrap_hf_co_h2o_sto3g()
+#   test_pyscf_wrap_hf_co_h2o_sto3g_pbe()
+#   test_pyscf_wrap_hf_co_h2o_sto3g_lyp()
+#   test_pyscf_wrap_dft_co_h2o_sto3g()
+#   test_scfwrap_single()
+#   test_pyscf_wrap_single_co_h2o()
+#   test_postscfwrap()
+#   test_postscfwrap_co_h2o()
+#   test_omolcas_wrap0()
+#   test_omolcas_wrap_co_h2o_ccpvdz()
 #   compute_emb_kernel()
