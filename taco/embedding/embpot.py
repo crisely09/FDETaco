@@ -51,7 +51,8 @@ class EmbPotBase():
         self.dm1 = None
         self.vemb_dict = {}
 
-    def check_emb_arguments(self, emb_args):
+    @staticmethod
+    def check_emb_arguments(emb_args):
         if not isinstance(emb_args, dict):
             raise TypeError("emb_args must be a dictionary with embedding arguments.")
         if emb_args['xc_code'] is None:
@@ -60,14 +61,12 @@ class EmbPotBase():
             xctype = xc_type(emb_args['xc_code'])
             if xctype not in ['LDA', 'GGA']:
                 raise NotImplementedError("Only `LDA` and `GGA` functionals are available")
-            else:
-                self.xctype = xctype 
         if 't_code' not in emb_args:
             raise KeyError("Missing to specify `t_code` in emb_args.")
         else:
             xctype = xc_type(emb_args['t_code'])
-            if xctype != 'LDA':
-                raise NotImplementedError("Only `LDA` kinetic energy funcitonal available")
+            if xctype not in ['LDA', 'GGA']:
+                raise NotImplementedError("Only `LDA` and `GGA` kinetic energy funcitonals available")
 
     def assign_dm(self, nfrag, dm):
         """Assign matrix to object attribite.

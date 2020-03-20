@@ -35,7 +35,7 @@ def test_embpotbase():
     with pytest.raises(KeyError):
         EmbPotBase(mol0, mol1, dict1)
     dict2 = {'xc_code': ',MGGA_C_CS', 't_code': 'PBE'}
-    dict3 = {'xc_code': 'PBE', 't_code': 'PBE'}
+    dict3 = {'xc_code': 'PBE', 't_code': ',MGGA_C_CS'}
     with pytest.raises(NotImplementedError):
         EmbPotBase(mol0, mol1, dict2)
     with pytest.raises(NotImplementedError):
