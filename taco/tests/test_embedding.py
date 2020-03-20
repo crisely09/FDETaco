@@ -27,12 +27,11 @@ def test_embpotbase():
     mol1 = 'mol'
     emb_args = 'mol'
     dict0 = {'mol': 0}
-    dict1 = {'xc_code': 0}
+    dict1 = {'xc_code': 'LDA'}
     with pytest.raises(TypeError):
         EmbPotBase(mol0, mol1, emb_args)
     with pytest.raises(KeyError):
         EmbPotBase(mol0, mol1, dict0)
-    dict1 = {'xc_code': 'LDA'}
     with pytest.raises(KeyError):
         EmbPotBase(mol0, mol1, dict1)
     dict2 = {'xc_code': 'XC_MGGA_C_CS', 't_code': 'PBE'}
@@ -533,7 +532,6 @@ def test_pyscf_wrap_single_co_h2o():
     grid_args = dict(points=grids.coords, weights=grids.weights)
     wrap1 = PyScfWrapSingle(args0, frag_charges, fn0, grid_args, embs)
     emb_pot = wrap1.compute_embedding_potential()
-    print("Embedding potential: \n", emb_pot)
 
 
 def test_postscfwrap():
@@ -661,7 +659,7 @@ def test_omolcas_wrap_co_h2o_ccpvdz():
     assert abs(postwrap.energy_dict['exc_nad_final'] - embdic['exc_nad_final']) < 1e-6
     total_emb_ref = embdic['int_emb_xc'] + embdic['int_emb_t']
     total_emb_new = postwrap.energy_dict['int_emb_xc'] + postwrap.energy_dict['int_emb_t']
-    print(total_emb_ref - total_emb_new)
+    # print(total_emb_ref - total_emb_new)
     assert abs(total_emb_ref - total_emb_new) < 1e-5
     postwrap.print_embedding_information()
 

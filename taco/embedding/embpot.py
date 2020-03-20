@@ -1,7 +1,7 @@
 """PySCF Utilities for Embedding calculations."""
 
 import numpy as np
-from pyscf.dft.libxc import xc_type
+from pyscf.dft.numint import NumInt
 
 
 class EmbPotBase():
@@ -57,7 +57,8 @@ class EmbPotBase():
         if emb_args['xc_code'] is None:
             raise KeyError("Missing to specify `xc_code` in emb_args.")
         else:
-            xctype = xc_type(emb_args['xc_code'])
+            ni = NumInt()
+            xctype = ni._xc_type(emb_args['xc_code'])
             if xctype not in ['LDA', 'GGA']:
                 raise NotImplementedError("Only `LDA` and `GGA` functionals are available")
             else:
@@ -65,7 +66,8 @@ class EmbPotBase():
         if 't_code' not in emb_args:
             raise KeyError("Missing to specify `t_code` in emb_args.")
         else:
-            xctype = xc_type(emb_args['t_code'])
+            ni = NumInt()
+            xctype = ni._xc_type(emb_args['t_code'])
             if xctype != 'LDA':
                 raise NotImplementedError("Only `LDA` kinetic energy funcitonal available")
 
