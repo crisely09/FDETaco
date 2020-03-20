@@ -4,9 +4,11 @@ import numpy as np
 import qcelemental as qcel
 from pyscf import gto
 from pyscf.dft import libxc, gen_grid
+# from pyscf.dft.fdet import eval_mat_emb  #  For future development in PySCF
 from pyscf.dft.numint import eval_ao, eval_rho, eval_mat
 
 from taco.embedding.embpot import EmbPotBase
+from taco.embedding.pyscf_fdet import eval_mat_emb
 
 
 def get_charges_and_coords(mol):
@@ -56,9 +58,9 @@ def get_dft_grid_stuff(code, rho_both, rho1, rho2):
         Density of each fragment evaluated on n grid points.
 
     """
-    exc, vxc, fxc, kxc = libxc.eval_xc(code, rho_both)
-    exc2, vxc2, fxc2, kxc2 = libxc.eval_xc(code, rho1)
-    exc3, vxc3, fxc3, kxc3 = libxc.eval_xc(code, rho2)
+    exc, vxc = libxc.eval_xc(code, rho_both)[:2]
+    exc2, vxc2 = libxc.eval_xc(code, rho1)[:2]
+    exc3, vxc3 = libxc.eval_xc(code, rho2)[:2]
     return (exc, exc2, exc3), (vxc, vxc2, vxc3)
 
 
@@ -100,7 +102,7 @@ class PyScfEmbPot(EmbPotBase):
 
     Methods
     -------
-    __init__(self, frag0_args, frag1_args, emb_args)
+    __init__(self, mol0, mol1, frag1_args, emb_args)
     check_molecules(self, mol0, mol1)
     check_emb_arguments(emb_args)
     save_maininfo(self)
@@ -208,33 +210,55 @@ class PyScfEmbPot(EmbPotBase):
         grids = gen_grid.Grids(system)
         grids.level = 4
         grids.build()
-        ao_mol0 = eval_ao(self.mol0, grids.coords, deriv=0)
-        ao_mol1 = eval_ao(self.mol1, grids.coords, deriv=0)
-        # Make Complex DM
-        ao_both = eval_ao(system, grids.coords, deriv=0)
         nao_mol0 = self.mol0.nao_nr()
         nao_mol1 = self.mol1.nao_nr()
         nao_tot = nao_mol0 + nao_mol1
         dm_both = np.zeros((nao_tot, nao_tot))
         dm_both[:nao_mol0, :nao_mol0] = self.dm0
         dm_both[nao_mol0:, nao_mol0:] = self.dm1
-        # Compute DFT non-additive potential and energies
-        rho_mol0 = eval_rho(self.mol0, ao_mol0, self.dm0, xctype='LDA')
-        rho_mol1 = eval_rho(self.mol1, ao_mol1, self.dm1, xctype='LDA')
-        rho_both = eval_rho(system, ao_both, dm_both, xctype='LDA')
-        # Compute all densities on a grid
         xc_code = self.emb_args["xc_code"]
         t_code = self.emb_args["t_code"]
-        excs, vxcs = get_dft_grid_stuff(xc_code, rho_both, rho_mol0, rho_mol1)
-        ets, vts = get_dft_grid_stuff(t_code, rho_both, rho_mol0, rho_mol1)
-        vxc_emb = vxcs[0][0] - vxcs[1][0]
-        vt_emb = vts[0][0] - vts[1][0]
-        # Energy functionals:
-        exc_nad = get_nad_energy(grids, excs, rho_both, rho_mol0, rho_mol1)
-        et_nad = get_nad_energy(grids, ets, rho_both, rho_mol0, rho_mol1)
-        v_nad_xc = eval_mat(self.mol0, ao_mol0, grids.weights, rho_mol0, vxc_emb, xctype='LDA')
-        v_nad_t = eval_mat(self.mol0, ao_mol0, grids.weights, rho_mol0, vt_emb, xctype='LDA')
-        return (exc_nad, et_nad, v_nad_xc, v_nad_t)
+        # Check type of functional
+        if self.xctype == "LDA":
+            ao_mol0 = eval_ao(self.mol0, grids.coords, deriv=0)
+            ao_mol1 = eval_ao(self.mol1, grids.coords, deriv=0)
+            # Make Complex DM
+            ao_both = eval_ao(system, grids.coords, deriv=0)
+            # Compute DFT non-additive potential and energies
+            rho_mol0 = eval_rho(self.mol0, ao_mol0, self.dm0, xctype='LDA')
+            rho_mol1 = eval_rho(self.mol1, ao_mol1, self.dm1, xctype='LDA')
+            rho_both = eval_rho(system, ao_both, dm_both, xctype='LDA')
+            # Compute all densities on a grid
+            excs, vxcs = get_dft_grid_stuff(xc_code, rho_both, rho_mol0, rho_mol1)
+            ets, vts = get_dft_grid_stuff(t_code, rho_both, rho_mol0, rho_mol1)
+            vxc_emb = vxcs[0][0] - vxcs[1][0]
+            vt_emb = vts[0][0] - vts[1][0]
+            # Energy functionals:
+            exc_nad = get_nad_energy(grids, excs, rho_both, rho_mol0, rho_mol1)
+            et_nad = get_nad_energy(grids, ets, rho_both, rho_mol0, rho_mol1)
+            v_nad_xc = eval_mat(self.mol0, ao_mol0, grids.weights, rho_mol0, vxc_emb, xctype='LDA')
+            v_nad_t = eval_mat(self.mol0, ao_mol0, grids.weights, rho_mol0, vt_emb, xctype='LDA')
+            return (exc_nad, et_nad, v_nad_xc, v_nad_t)
+        else:  # self.xctype == "GGA"
+            ao_mol0 = eval_ao(self.mol0, grids.coords, deriv=1)
+            ao_mol1 = eval_ao(self.mol1, grids.coords, deriv=1)
+            # Make Complex DM
+            ao_both = eval_ao(system, grids.coords, deriv=1)
+            # Compute DFT non-additive potential and energies
+            rho_mol0 = eval_rho(self.mol0, ao_mol0, self.dm0, xctype='GGA')
+            rho_mol1 = eval_rho(self.mol1, ao_mol1, self.dm1, xctype='GGA')
+            rho_both = eval_rho(system, ao_both, dm_both, xctype='GGA')
+            # Compute all densities on a grid
+            excs, vxcs = get_dft_grid_stuff(xc_code, rho_both, rho_mol0, rho_mol1)
+            ets, vts = get_dft_grid_stuff(t_code, rho_both[0], rho_mol0[0], rho_mol1[0])
+            # Energy functionals:
+            exc_nad = get_nad_energy(grids, excs, rho_both[0], rho_mol0[0], rho_mol1[0])
+            et_nad = get_nad_energy(grids, ets, rho_both[0], rho_mol0[0], rho_mol1[0])
+            v_nad_xc = eval_mat_emb(self.mol0, ao_mol0, grids.weights, rho_both, rho_mol0, vxcs[0],
+                                    vxcs[1], xctype='GGA')
+            vt_emb = vts[0][0] - vts[1][0]
+            v_nad_t = eval_mat(self.mol0, ao_mol0[0], grids.weights, rho_mol0[0], vt_emb, xctype='LDA')
+            return (exc_nad, et_nad, v_nad_xc, v_nad_t)
 
     def compute_embedding_potential(self, dm0=None, dm1=None):
         """Compute embedding potential.
