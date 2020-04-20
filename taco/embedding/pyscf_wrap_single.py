@@ -1,6 +1,7 @@
 """PySCF Utilities for Embedding calculations."""
 
 import numpy as np
+from pyscf import gto, lib, df
 from pyscf.dft import libxc
 from pyscf.dft.numint import eval_ao, eval_rho, eval_mat
 
@@ -27,6 +28,26 @@ def get_dft_grid_stuff(code, rho_both, rho1, rho2):
     exc2, vxc2, fxc2, kxc2 = libxc.eval_xc(code, rho1)
     exc3, vxc3, fxc3, kxc3 = libxc.eval_xc(code, rho2)
     return (exc, exc2, exc3), (vxc, vxc2, vxc3)
+
+
+def get_coulomb_repulsion(mol, dm, grid):
+    """Compute the coulomb repulsion using AO integrals.
+
+    Paramters
+    ---------
+    mol : gto.M
+        Molecule of fragment B
+    dm : np.ndarray(NAOs, NAOS)
+        Density matrix of fragment B
+    grid : np.ndarray((N, 3))
+        3D array of coordinates
+    """
+    v_coul = np.empty_like(grid[:, 0])
+    for p0, p1 in lib.prange(0, v_coul.size, 600):
+        fakemol = gto.fakemol_for_charges(coords[p0:p1])
+        ints = df.incore.aux_e2(mol, fakemol)
+        v_coul[p0:p1] = np.einsum('ijp,ij->p', ints, dm)
+    return v_coul
 
 
 def get_electrostatic_potentials(mol0, rho0, dens_func, frag1_charges, grid_args):
