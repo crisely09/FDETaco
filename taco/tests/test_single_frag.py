@@ -90,7 +90,7 @@ def test_get_coulomb_potential():
     vemb = embpot.compute_embedding_potential(ref_dm0, ref_dm1)
     v_coul_ref = embpot.vemb_dict['v_coulomb']
     # Construct grid for integration
-    grid = gen_grid.Grids(pyscfmol)
+    grid = gen_grid.Grids(mol0)
     grid.level = 4
     grid.build()
     ao_mol0 = eval_ao(mol0, grid.coords, deriv=0)
@@ -135,4 +135,5 @@ def test_pyscf_wrap_single_co_h2o():
 
 if __name__ == "__main__":
     test_scfwrap_single()
+    test_get_coulomb_potential()
     test_pyscf_wrap_single_co_h2o()

@@ -44,7 +44,7 @@ def get_coulomb_repulsion(mol, dm, grid):
     """
     v_coul = np.empty_like(grid[:, 0])
     for p0, p1 in lib.prange(0, v_coul.size, 600):
-        fakemol = gto.fakemol_for_charges(coords[p0:p1])
+        fakemol = gto.fakemol_for_charges(grid[p0:p1])
         ints = df.incore.aux_e2(mol, fakemol)
         v_coul[p0:p1] = np.einsum('ijp,ij->p', ints, dm)
     return v_coul
