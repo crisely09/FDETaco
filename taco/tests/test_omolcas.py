@@ -20,7 +20,7 @@ from taco.testdata.cache import cache
 
 
 def test_omolcas_wrap_co_h2o_ccpvdz():
-    # Compared with ScfWrap results
+    """Test embedded HF-in-HF case."""
     # Compared with ScfWrap results
     co = Molecule.from_data("""C        -3.6180905689    1.3768035675   -0.0207958979
                                O        -4.7356838533    1.5255563000    0.1150239130""")
@@ -48,7 +48,7 @@ def test_omolcas_wrap_co_h2o_ccpvdz():
     np.testing.assert_allclose(ref_pot, vemb_tri, atol=1e-4)
     postwrap.prepare_for_postscf(embdic, matdic)
     fin_dm = np.copy(matdic['dm0_final'])
-    read_dm = postwrap.get_density(cache.files["molcas_runascii_co_h2o_cc-pvdz"])
+    read_dm = postwrap.get_density(cache.files["molcas_RUNASCII_co_h2o_cc-pvdz"])
     np.testing.assert_allclose(fin_dm, read_dm, atol=1e-5)
     postwrap.dms_dict['dm0_final'] = read_dm
     postwrap.save_info()

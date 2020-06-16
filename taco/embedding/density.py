@@ -1,5 +1,6 @@
 """Tools to handle densities."""
 
+import re
 import numpy as np
 from taco.translate.tools import parse_matrices
 

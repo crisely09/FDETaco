@@ -11,6 +11,7 @@ if [ "$TRAVIS_OS_NAME" == "osx" ]; then
     }
     MINICONDA=Miniconda3-latest-MacOSX-x86_64.sh
 else
+    export CXX=g++-4.8 CC=gcc-4.8
     MINICONDA=Miniconda3-latest-Linux-x86_64.sh
 fi
 MINICONDA_HOME=$HOME/miniconda
@@ -28,7 +29,9 @@ export PIP_ARGS="-U"
 echo ". $MINICONDA_HOME/etc/profile.d/conda.sh" >> ~/.bashrc  # Source the profile.d file
 echo "conda activate" >> ~/.bashrc  # Activate conda
 source ~/.bashrc  # source file to get new commands
-#export PATH=$MINICONDA_HOME/bin:$PATH  # Old way, should not be needed anymore
+conda config --set always_yes yes
+conda install conda conda-build jinja2 anaconda-client
+conda update --quiet --all
 if [ "$TRAVIS_OS_NAME" == "osx" ]; then
     HOMEBREW_NO_AUTO_UPDATE=1 brew upgrade pyenv
     # Pyenv requires minor revision, get the latest
