@@ -9,8 +9,8 @@ from qcelemental.models import Molecule
 from pyscf import gto
 from pyscf.dft import gen_grid
 
-from taco.embedding.embpot import EmbPotBase
-from taco.embedding.pyscf_embpot import PyScfEmbPot
+from taco.embedding.emb_pot import EmbPotBase
+from taco.embedding.pyscf_emb_pot import PyScfEmbPot
 from taco.embedding.scf_wrap import ScfWrap
 # from taco.embedding.pyscf_tddft import compute_emb_kernel
 from taco.embedding.pyscf_wrap import PyScfWrap

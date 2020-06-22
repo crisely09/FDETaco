@@ -10,7 +10,7 @@ from pyscf import gto
 from pyscf.dft import gen_grid
 from pyscf.dft.numint import eval_ao, eval_rho, eval_mat
 
-from taco.embedding.pyscf_embpot import PyScfEmbPot
+from taco.embedding.pyscf_emb_pot import PyScfEmbPot
 from taco.embedding.scf_wrap_single import ScfWrapSingle
 from taco.embedding.pyscf_wrap_single import PyScfWrapSingle, get_coulomb_repulsion
 from taco.testdata.cache import cache
