@@ -70,7 +70,7 @@ def get_electrostatic_potentials(mol0, rho0, dens_func, frag1_charges, grid_args
     v_coulomb = eval_mat(mol0, ao_mol0, grid_args["weights"], rho0, v_coul, xctype='LDA')
 
     # Nuclear-electron attraction integrals
-    mol0_charges, mol1_coords = get_charges_and_coords(mol0)
+    mol0_charges, mol0_coords = get_charges_and_coords(mol0)
     mol1_charges = frag1_charges["charges"]
     mol1_coords = frag1_charges["charges_coords"]
     v0_nuc1 = 0
@@ -82,7 +82,7 @@ def get_electrostatic_potentials(mol0, rho0, dens_func, frag1_charges, grid_args
     return elst_potentials
 
 
-def get_density_from_dm(mol, dm, points):
+def get_density_from_dm(mol, dm, points, xctype='LDA', deriv=0):
     """Compute density on a grid from the density matrix.
 
     Parameters
@@ -93,6 +93,11 @@ def get_density_from_dm(mol, dm, points):
         Density matrix corresponding to mol.
     points : np.ndarray
         Grid points where the density is evaluated.
+    xctype : str
+        Type of functional it's used later. This defines
+        how many derivatives or rho will be computed.
+    deriv : int
+        Number of derivatives needed for orbitals and density.
 
     Returns
     -------
@@ -100,8 +105,8 @@ def get_density_from_dm(mol, dm, points):
         Density on a grid.
 
     """
-    ao_mol = eval_ao(mol, points, deriv=0)
-    rho = eval_rho(mol, ao_mol, dm, xctype='LDA')
+    ao_mol = eval_ao(mol, points, deriv=deriv)
+    rho = eval_rho(mol, ao_mol, dm, xctype=xctype)
     return rho
 
 

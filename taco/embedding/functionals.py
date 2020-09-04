@@ -39,8 +39,28 @@ def compute_kinetic_weizsacker_potential(rho_devs):
         laplacian = rho_devs[4]
     """
     grad_rho = rho_devs[1:4]
-    wpot = 1.0/8.0*(np.einsum('ij,ij->i', grad_rho, grad_rho))/pow(rho[0], 2)
-    wpot += - 1.0/4.0*(rho_devs[4])/rho[0]
+    wpot = 1.0/8.0*(np.einsum('ij,ij->i', grad_rho, grad_rho))/pow(rho_devs[0], 2)
+    wpot += - 1.0/4.0*(rho_devs[4])/rho_devs[0]
+    return wpot
+
+
+def compute_kinetic_weizsacker_experiment(rho_devs):
+    """Compute the Weizsacker Potential.
+
+    Parameters
+    ----------
+    rho_devs : np.array((6, N))
+        Array with the density derivatives,
+        density = rho_devs[0]
+        grad = rho_devs[1:3] (x, y, z) derivatives
+        laplacian = rho_devs[4]
+    """
+    zero_mask = np.where(abs(rho_devs[0] - 0.0) > 1e-10)[0]
+    wpot = np.zeros(rho_devs[0].shape)
+    grad_rho = rho_devs[1:4].T
+    wpot[zero_mask] += 1.0/8.0*(np.einsum('ij,ij->i', grad_rho, grad_rho)[zero_mask])
+    wpot[zero_mask] /= pow(rho_devs[0][zero_mask], 2)
+    wpot[zero_mask] += - 1.0/8.0*(rho_devs[4][zero_mask])/rho_devs[0][zero_mask]
     return wpot
 
 
@@ -72,6 +92,27 @@ def ndsd_switch_factor(rho_devs, plambda):
     return sfactor
 
 
+def compute_kinetic_ndsd_potential(rho0_devs, rho1_devs, plambda):
+    """Compute the NDSD energy and potential.
+
+    Parameters
+    ----------
+    rho0_devs, rho1_devs : np.array((6, N))
+        Array with the density derivatives,
+        density = rho_devs[0]
+        grad = rho_devs[1:3] (x, y, z) derivatives
+        laplacian = rho_devs[4]
+    """
+    rho_tot = rho0_devs[0] + rho1_devs[0]
+    etf_tot, vtf_tot = compute_kinetic_tf(rho_tot)
+    etf_0, vtf_0 = compute_kinetic_tf(rho0_devs[0])
+    etf_1, vtf_1 = compute_kinetic_tf(rho1_devs[0])
+    sfactor = ndsd_switch_factor(rho1_devs, plambda)
+    wpot = compute_kinetic_weizsacker_experiment(rho1_devs)
+    v_ndsd = vtf_tot - vtf_0 + sfactor*wpot
+    return v_ndsd
+
+
 def compute_kinetic_ndsd(rho0_devs, rho1_devs, plambda, grid):
     """Compute the NDSD energy and potential.
 
@@ -82,15 +123,16 @@ def compute_kinetic_ndsd(rho0_devs, rho1_devs, plambda, grid):
         density = rho_devs[0]
         grad = rho_devs[1:3] (x, y, z) derivatives
         laplacian = rho_devs[4]
-    grid : Grid
-        Molecular integration grid from PySCF.
+    grid : Grids
+        Molecular integration grid from PySCF
     """
     rho_tot = rho0_devs[0] + rho1_devs[0]
     etf_tot, vtf_tot = compute_kinetic_tf(rho_tot)
     etf_0, vtf_0 = compute_kinetic_tf(rho0_devs[0])
     etf_1, vtf_1 = compute_kinetic_tf(rho1_devs[0])
     sfactor = ndsd_switch_factor(rho1_devs, plambda)
-    wpot = compute_kinetic_weizsacker_potential(rho1_devs)
+ #  wpot = compute_kinetic_weizsacker_potential(rho1_devs)
+    wpot = compute_kinetic_weizsacker_experiment(rho1_devs)
     v_ndsd = vtf_tot - vtf_0 + sfactor*wpot
     e_ndsd = etf_tot - etf_0 - etf_1 + np.dot(grid.weigths, rho0_devs[0]*wpot*sfactor)
     return e_ndsd, v_ndsd
