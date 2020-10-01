@@ -5,18 +5,34 @@ import os
 import pytest
 import pandas
 import numpy as np
+import qcelemental as qcel
 from qcelemental.models import Molecule
 from pyscf import gto
 from pyscf.dft import gen_grid
 
 from taco.embedding.emb_pot import EmbPotBase
-from taco.embedding.pyscf_emb_pot import PyScfEmbPot
+from taco.embedding.pyscf_emb_pot import PyScfEmbPot, get_charges_and_coords
 from taco.embedding.scf_wrap import ScfWrap
 # from taco.embedding.pyscf_tddft import compute_emb_kernel
 from taco.embedding.pyscf_wrap import PyScfWrap
 from taco.embedding.postscf_wrap import PostScfWrap
 from taco.embedding.omolcas_wrap import OpenMolcasWrap
 from taco.testdata.cache import cache
+
+
+def test_get_charges_and_coords():
+    a = """H    0.00000  0.0000  0.0000
+           H    0.00000  0.0000  0.7140
+        """
+    bohr2a = qcel.constants.conversion_factor("bohr", "angstrom")
+    b = [('H', np.array([0.0000, 0.0000, 0.0000])),
+         ('H', np.array([0.00000, 0.0000, 0.714])/bohr2a)]
+    mol1 = gto.M(atom=a, basis='3-21g')
+    mol2 = gto.M(atom=b, basis='3-21g')
+    c1, co1 = get_charges_and_coords(mol1)
+    c2, co2 = get_charges_and_coords(mol2)
+    assert np.allclose(c1, c2)
+    assert np.allclose(co1, co2)
 
 
 def test_embpotbase():
@@ -566,6 +582,7 @@ def compute_emb_kernel():
 
 
 if __name__ == "__main__":
+    test_get_charges_and_coords()
     test_embpotbase()
     test_pyscfembpot0()
     test_pyscf_embpot_hf_co_h2o_sto3g()
