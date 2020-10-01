@@ -28,7 +28,7 @@ def test_get_charges_and_coords():
     b = [('H', np.array([0.0000, 0.0000, 0.0000])),
          ('H', np.array([0.00000, 0.0000, 0.714])/bohr2a)]
     mol1 = gto.M(atom=a, basis='3-21g')
-    mol2 = gto.M(atom=b, basis='3-21g')
+    mol2 = gto.M(atom=b, basis='3-21g', unit='Bohr')
     c1, co1 = get_charges_and_coords(mol1)
     c2, co2 = get_charges_and_coords(mol2)
     assert np.allclose(c1, c2)
