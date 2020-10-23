@@ -17,19 +17,23 @@ def get_charges_and_coords(mol):
     coords = []
     charges = []
     for i in range(mol.natm):
-        if isinstance(mol.atom, str):
-            atm_str = mol.atom.split()
-            if mol.unit == 'Bohr':
-                tmp = [float(f) for f in atm_str[i*4+1:(i*4)+4]]
-            else:
-                tmp = [float(f)/bohr2a for f in atm_str[i*4+1:(i*4)+4]]
+        # Avoid ghost atoms
+        if mol._atm[i][0] == 0:
+            next
         else:
-            if mol.unit == 'Bohr':
-                tmp = [mol.atom[i][1][j] for j in range(3)]
+            if isinstance(mol.atom, str):
+                atm_str = mol.atom.split()
+                if mol.unit == 'Bohr':
+                    tmp = [float(f) for f in atm_str[i*4+1:(i*4)+4]]
+                else:
+                    tmp = [float(f)/bohr2a for f in atm_str[i*4+1:(i*4)+4]]
             else:
-                tmp = [mol.atom[i][1][j]/bohr2a for j in range(3)]
-        coords.append(tmp)
-        charges.append(mol._atm[i][0])
+                if mol.unit == 'Bohr':
+                    tmp = [mol.atom[i][1][j] for j in range(3)]
+                else:
+                    tmp = [mol.atom[i][1][j]/bohr2a for j in range(3)]
+            coords.append(tmp)
+            charges.append(mol._atm[i][0])
     coords = np.array(coords)
     charges = np.array(charges, dtype=int)
     return charges, coords

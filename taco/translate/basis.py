@@ -236,6 +236,25 @@ def write_bas_basis(elements, bshells, bname, comment=None):
             bf.write(' ****\n')
 
 
+# def parse_nwchem_basis(basis):
+#     """Parse a basis in Gaussian/Q-Chem format.
+# 
+#     Parameters
+#     ----------
+#     basis : str
+#         String with information of the basis set.
+#     """
+#     new_shell = re.compile(r'^\s+\w{,2}\s+[S, P, D, F, G, H, I]')
+#     new_element = re.compile(r'\#BASIS SET:*\-\>*')
+#     # Split in lines
+#     lines = basis.splitlines()
+#     epositions = []
+#     spositions = []
+#     ends = []
+#     comment = []
+#     for n, line in enumerate(lines):
+
+
 def write_nwchem_basis(elements, bshells, bname, comment=None):
     """Write to file the basis set information in NWChem format.
 
