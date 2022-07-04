@@ -62,7 +62,7 @@ def test_parse_matrix_molcas():
 
 def test_parse_matrices_molcas():
     """Read matrices parser, OMolcas example."""
-    fname = cache.files["molcas_runascii_co_h2o_cc-pvdz"]
+    fname = cache.files["molcas_RUNASCII_co_h2o_cc-pvdz"]
     hook0 = 'hook'
     with pytest.raises(TypeError):
         parse_matrices(fname, hook0, 'molcas')

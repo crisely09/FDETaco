@@ -1,19 +1,18 @@
 """PySCF Utilities for Embedding calculations."""
 
 import numpy as np
-import qcelemental as qcel
 from pyscf import gto
 from pyscf.dft import libxc, gen_grid
 # from pyscf.dft.fdet import eval_mat_emb  #  For future development in PySCF
-from pyscf.dft.numint import eval_ao, eval_rho, eval_mat
+from pyscf.dft.numint import eval_ao, eval_rho, eval_mat, _format_uks_dm
 
 from taco.embedding.emb_pot import EmbPotBase
+from taco.data.units import BOHR
 from taco.embedding.pyscf_fdet import eval_mat_emb
 
 
 def get_charges_and_coords(mol):
     """Return arrays with charges and coordinates."""
-    bohr2a = qcel.constants.conversion_factor("bohr", "angstrom")
     coords = []
     charges = []
     for i in range(mol.natm):
@@ -26,12 +25,12 @@ def get_charges_and_coords(mol):
                 if mol.unit == 'Bohr':
                     tmp = [float(f) for f in atm_str[i*4+1:(i*4)+4]]
                 else:
-                    tmp = [float(f)/bohr2a for f in atm_str[i*4+1:(i*4)+4]]
+                    tmp = [float(f)/BOHR for f in atm_str[i*4+1:(i*4)+4]]
             else:
                 if mol.unit == 'Bohr':
                     tmp = [mol.atom[i][1][j] for j in range(3)]
                 else:
-                    tmp = [mol.atom[i][1][j]/bohr2a for j in range(3)]
+                    tmp = [mol.atom[i][1][j]/BOHR for j in range(3)]
             coords.append(tmp)
             charges.append(mol._atm[i][0])
     coords = np.array(coords)
@@ -39,7 +38,7 @@ def get_charges_and_coords(mol):
     return charges, coords
 
 
-def compute_nuclear_repulsion(mol1, mol2):
+def compute_nuclear_repulsion(mol0, mol1):
     """Compute nuclear repulsion between two fragments.
 
     Parameters
@@ -49,16 +48,62 @@ def compute_nuclear_repulsion(mol1, mol2):
 
     """
     result = 0
+    charges0, coord0 = get_charges_and_coords(mol0)
     charges1, coord1 = get_charges_and_coords(mol1)
-    charges2, coord2 = get_charges_and_coords(mol2)
-    for i, q1 in enumerate(charges1):
-        for j, q2 in enumerate(charges2):
-            d = np.linalg.norm(coord1[i]-coord2[j])
-            result += q1*q2/d
+    for i, q0 in enumerate(charges0):
+        for j, q1 in enumerate(charges1):
+            d = np.linalg.norm(coord0[i]-coord1[j])
+            result += q0*q1/d
     return result
 
 
-def get_dft_grid_stuff(code, rho_both, rho1, rho2):
+def compute_attraction_potential(mol0, mol1):
+    """Compute the nuclei-electron attraction potentials.
+
+    Returns
+    -------
+    v0nuc1 : np.ndarray(NAO,NAO)
+        Attraction potential between electron density of fragment0
+        and nuclei of fragment1.
+    v1nuc0 : np.ndarray(NAO,NAO)
+        Attraction potential between electron density of fragment0
+        and nuclei of fragment1.
+
+    """
+    # Nuclear-electron attraction integrals
+    mol0_charges, mol0_coords = get_charges_and_coords(mol0)
+    mol1_charges, mol1_coords = get_charges_and_coords(mol1)
+    v0_nuc1 = 0
+    for i, q in enumerate(mol1_charges):
+        mol0.set_rinv_origin(mol1_coords[i])
+        v0_nuc1 += mol0.intor('int1e_rinv') * -q
+    v1_nuc0 = 0
+    for i, q in enumerate(mol0_charges):
+        mol1.set_rinv_origin(mol0_coords[i])
+        v1_nuc0 += mol1.intor('int1e_rinv') * -q
+    return v0_nuc1, v1_nuc0
+
+
+def compute_coulomb_potential(mol0, mol1, dm1):
+    """Compute the electron-electron repulsion potential.
+
+    Returns
+    -------
+    v_coulomb : np.ndarray(NAO,NAO)
+        Coulomb repulsion potential.
+
+    """
+    mol1234 = mol1 + mol1 + mol0 + mol0
+    shls_slice = (0, mol1.nbas,
+                  mol1.nbas, mol1.nbas+mol1.nbas,
+                  mol1.nbas+mol1.nbas, mol1.nbas+mol1.nbas+mol0.nbas,
+                  mol1.nbas+mol1.nbas+mol0.nbas, mol1234.nbas)
+    eris = mol1234.intor('int2e', shls_slice=shls_slice)
+    v_coulomb = np.einsum('ab,abcd->cd', dm1, eris)
+    return v_coulomb
+
+
+def get_dft_grid_stuff(code, rho_both, rho0, rho1):
     """Evaluate energy densities and potentials on a grid.
 
     Parameters
@@ -72,8 +117,8 @@ def get_dft_grid_stuff(code, rho_both, rho1, rho2):
 
     """
     exc, vxc = libxc.eval_xc(code, rho_both)[:2]
-    exc2, vxc2 = libxc.eval_xc(code, rho1)[:2]
-    exc3, vxc3 = libxc.eval_xc(code, rho2)[:2]
+    exc2, vxc2 = libxc.eval_xc(code, rho0)[:2]
+    exc3, vxc3 = libxc.eval_xc(code, rho1)[:2]
     return (exc, exc2, exc3), (vxc, vxc2, vxc3)
 
 
@@ -218,6 +263,133 @@ def make_both_potential_matrices(mol0, mol1, system, dm0, dm1, dm_both, grids, x
     return (exc_nad, et_nad, v_nad_xc, v_nad_t)
 
 
+def compute_uxc_potential(mol0, mol1, grids, xc_code, dm0, dm1, relativity=0, hermi=0,
+           max_memory=2000, verbose=None):
+    '''Calculate UKS XC functional and potential matrix on given meshgrids
+    for a set of density matrices
+
+    Args:
+        mols : an instance of :class:`Mole`
+
+        grids : an instance of :class:`Grids`
+            grids.coords and grids.weights are needed for coordinates and weights of meshgrids.
+            This should be the grid of the full system
+        xc_code : str
+            XC functional description.
+            See :func:`parse_xc` of pyscf/dft/libxc.py for more details.
+        dms : a list of 2D arrays
+            A list of density matrices, stored as (alpha,alpha,...,beta,beta,...)
+
+    Kwargs:
+        hermi : int
+            Input density matrices symmetric or not
+        max_memory : int or float
+            The maximum size of cache to use (in MB).
+
+    Returns:
+        nelec, excsum, vmat.
+        nelec is the number of (alpha,beta) electrons generated by numerical integration.
+        excsum is the XC functional value.
+        vmat is the XC potential matrix for (alpha,beta) spin.
+
+    Examples:
+
+    '''
+    ni = dft.numint.NumInt()
+    xctype = ni._xc_type(xc_code)
+    system = gto.M(atom=mol0.atom + mol1.atom, basis=mol0.basis) 
+
+    # First for fragment A
+    shls_slice = (0, mol0.nbas)
+    ao_loc = mol0.ao_loc_nr()
+
+    dma0, dmb0 = _format_uks_dm(dm0)
+    nao0 = dma0.shape[-1]
+    make_rhoa0, nset0 = ni._gen_rho_evaluator(mol0, dma0, hermi)[:2]
+    make_rhob0       = ni._gen_rho_evaluator(mol0, dmb0, hermi)[0]
+
+    nelec0 = np.zeros((2,nset0))
+    excsum0 = np.zeros(nset0)
+
+    # Now for fragment B
+    shls_slice = (0, mol1.nbas)
+    ao_loc = mol1.ao_loc_nr()
+
+    dma1, dmb1 = _format_uks_dm(dm1)
+    nao1 = dma1.shape[-1]
+    make_rhoa1, nset1 = ni._gen_rho_evaluator(mol1, dma1, hermi)[:2]
+    make_rhob1       = ni._gen_rho_evaluator(mol1, dmb1, hermi)[0]
+
+    nelec1 = np.zeros((2,nset1))
+    excsum1 = np.zeros(nset1)
+
+    # Final matrix
+    vmat = np.zeros((2,nset0,nao0,nao0), dtype=np.result_type(dma0, dmb0))
+
+    aow = None
+    if xctype == 'LDA':
+        ao_deriv = 0
+        ao0 = eval_ao(mol0, grids.coords, ao_deriv)
+        aow = numpy.ndarray(ao.shape, order='F', buffer=aow)
+        for idm in range(nset):
+            rho_a = make_rhoa(idm, ao, mask, xctype)
+            rho_b = make_rhob(idm, ao, mask, xctype)
+            exc, vxc = ni.eval_xc(xc_code, (rho_a, rho_b), spin=1,
+                                  relativity=relativity, deriv=1,
+                                  verbose=verbose)[:2]
+            vrho = vxc[0]
+            den = rho_a * weight
+            nelec[0,idm] += den.sum()
+            excsum[idm] += numpy.dot(den, exc)
+            den = rho_b * weight
+            nelec[1,idm] += den.sum()
+            excsum[idm] += numpy.dot(den, exc)
+
+            # *.5 due to +c.c. in the end
+            #:aow = numpy.einsum('pi,p->pi', ao, .5*weight*vrho[:,0], out=aow)
+            aow = _scale_ao(ao, .5*weight*vrho[:,0], out=aow)
+            vmat[0,idm] += _dot_ao_ao(mol, ao, aow, mask, shls_slice, ao_loc)
+            #:aow = numpy.einsum('pi,p->pi', ao, .5*weight*vrho[:,1], out=aow)
+            aow = _scale_ao(ao, .5*weight*vrho[:,1], out=aow)
+            vmat[1,idm] += _dot_ao_ao(mol, ao, aow, mask, shls_slice, ao_loc)
+            rho_a = rho_b = exc = vxc = vrho = None
+    elif xctype == 'GGA':
+        ao_deriv = 1
+        for ao, mask, weight, coords \
+                in ni.block_loop(mol, grids, nao, ao_deriv, max_memory):
+            aow = numpy.ndarray(ao[0].shape, order='F', buffer=aow)
+            for idm in range(nset):
+                rho_a = make_rhoa(idm, ao, mask, xctype)
+                rho_b = make_rhob(idm, ao, mask, xctype)
+                exc, vxc = ni.eval_xc(xc_code, (rho_a, rho_b), spin=1,
+                                      relativity=relativity, deriv=1,
+                                      verbose=verbose)[:2]
+                den = rho_a[0]*weight
+                nelec[0,idm] += den.sum()
+                excsum[idm] += numpy.dot(den, exc)
+                den = rho_b[0]*weight
+                nelec[1,idm] += den.sum()
+                excsum[idm] += numpy.dot(den, exc)
+
+                wva, wvb = _uks_gga_wv0((rho_a,rho_b), vxc, weight)
+                #:aow = numpy.einsum('npi,np->pi', ao, wva, out=aow)
+                aow = _scale_ao(ao, wva, out=aow)
+                vmat[0,idm] += _dot_ao_ao(mol, ao[0], aow, mask, shls_slice, ao_loc)
+                #:aow = numpy.einsum('npi,np->pi', ao, wvb, out=aow)
+                aow = _scale_ao(ao, wvb, out=aow)
+                vmat[1,idm] += _dot_ao_ao(mol, ao[0], aow, mask, shls_slice, ao_loc)
+                rho_a = rho_b = exc = vxc = wva = wvb = None
+
+    for i in range(nset):
+        vmat[0,i] = vmat[0,i] + vmat[0,i].conj().T
+        vmat[1,i] = vmat[1,i] + vmat[1,i].conj().T
+    if isinstance(dma, numpy.ndarray) and dma.ndim == 2:
+        vmat = vmat[:,0]
+        nelec = nelec.reshape(2)
+        excsum = excsum[0]
+    return nelec, excsum, vmat
+
+
 class PyScfEmbPot(EmbPotBase):
     """Base class for embedding potentials.
 
@@ -290,16 +462,7 @@ class PyScfEmbPot(EmbPotBase):
             Coulomb repulsion potential.
 
         """
-        mol0 = self.mol0
-        mol1 = self.mol1
-        mol1234 = mol1 + mol1 + mol0 + mol0
-        shls_slice = (0, mol1.nbas,
-                      mol1.nbas, mol1.nbas+mol1.nbas,
-                      mol1.nbas+mol1.nbas, mol1.nbas+mol1.nbas+mol0.nbas,
-                      mol1.nbas+mol1.nbas+mol0.nbas, mol1234.nbas)
-        eris = mol1234.intor('int2e', shls_slice=shls_slice)
-        v_coulomb = np.einsum('ab,abcd->cd', self.dm1, eris)
-        return v_coulomb
+        return compute_coulomb_potential(self.mol0, self.mol1, self.dm1)
 
     def compute_attraction_potential(self):
         """Compute the nuclei-electron attraction potentials.
@@ -314,18 +477,7 @@ class PyScfEmbPot(EmbPotBase):
             and nuclei of fragment1.
 
         """
-        # Nuclear-electron attraction integrals
-        mol0_charges, mol0_coords = get_charges_and_coords(self.mol0)
-        mol1_charges, mol1_coords = get_charges_and_coords(self.mol1)
-        v0_nuc1 = 0
-        for i, q in enumerate(mol1_charges):
-            self.mol0.set_rinv_origin(mol1_coords[i])
-            v0_nuc1 += self.mol0.intor('int1e_rinv') * -q
-        v1_nuc0 = 0
-        for i, q in enumerate(mol0_charges):
-            self.mol1.set_rinv_origin(mol0_coords[i])
-            v1_nuc0 += self.mol1.intor('int1e_rinv') * -q
-        return v0_nuc1, v1_nuc0
+        return compute_attraction_potential(self.mol0, self.mol1)
 
     def compute_nad_potential(self):
         """Compute the non-additive potentials and energies.

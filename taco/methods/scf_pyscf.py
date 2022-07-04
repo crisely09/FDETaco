@@ -8,31 +8,6 @@ from pyscf import scf, gto, dft
 from taco.methods.scf import ScfMethod
 
 
-def get_pyscf_molecule(mol, basis):
-    """Generate PySCF molecule object.
-    Parameters
-    ----------
-    mol : qcelemental.models.Molecule
-        The molecule object.
-    """
-    if not hasattr(mol, 'molecular_multiplicity'):
-        raise AttributeError("Molecule must have multiplicity.")
-    multiplicity = mol.molecular_multiplicity
-    spin = multiplicity - 1
-    string = mol.to_string(dtype='xyz')
-    lines = string.splitlines()
-    count = 0
-    for line in lines:
-        if len(line.split(' ')) < 4:
-            count += 1
-    string = '\n'.join(lines[count:])
-    pyscf_mol = gto.M(
-            atom=string,
-            basis=basis,
-            spin=spin,)
-    return pyscf_mol
-
-
 class ScfPyScf(ScfMethod):
     """Base class for method objects.
 
@@ -64,30 +39,27 @@ class ScfPyScf(ScfMethod):
         Add a potential to the Fock matrix.
 
     """
-    def __init__(self, mol, basis, method, xc_code=None):
+    def __init__(self, mol, method, xc_code=None):
         """ ScfPyScf object.
 
         Parameters
         ----------
-        mol : qcelemental Molecule object
-            Molecule information.
-        basis : string
-            Name of the basis set to be used.
+        mol : PySCF Molecule object
+            Contains molecule information: geometry, basis set, charge, spin.
         method : string
             Type of SCF method. Available options are:`hf` or `dft`.
         xc_code : string
             Only needed for DFT.
         """
         ScfMethod.__init__(self, mol)
-        self.mol_pyscf = get_pyscf_molecule(self.mol, basis)
         if self.restricted:
             if method.lower() == 'dft':
                 if xc_code is None:
                     raise ValueError('DFT functional not specified.')
-                self.scf_object = dft.RKS(self.mol_pyscf)
+                self.scf_object = dft.RKS(self.mol)
                 self.scf_object.xc = xc_code
             elif method.lower() == 'hf':
-                self.scf_object = scf.RHF(self.mol_pyscf)
+                self.scf_object = scf.RHF(self.mol)
             else:
                 raise ValueError("Unknown method {}.".format(method))
         else:

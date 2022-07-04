@@ -5,7 +5,6 @@ import os
 import pytest
 import pandas
 import numpy as np
-from qcelemental.models import Molecule
 from pyscf import gto
 from pyscf.dft import gen_grid
 from pyscf.dft.numint import eval_ao, eval_rho, eval_mat
@@ -50,16 +49,13 @@ def test_scfwrap_single():
     args0 = dict(basis='a', method='b', xc_code='c')
     with pytest.raises(KeyError):
         wrap.check_qc_arguments(args0)
-    args0 = dict(mol='a', method='b', xc_code='c')
+    args0 = dict(mol=0.7, xc_code='c')
     with pytest.raises(KeyError):
         wrap.check_qc_arguments(args0)
-    args0 = dict(mol=0.7, basis='a', xc_code='c')
-    with pytest.raises(KeyError):
-        wrap.check_qc_arguments(args0)
-    args0 = dict(mol=0.7, basis='a', method='c')
+    args0 = dict(mol=0.7, method='c')
     with pytest.raises(KeyError):
         wrap.check_emb_arguments(args0)
-    args0 = dict(mol=0.7, basis='a', method='c', xc_code='d')
+    args0 = dict(mol=0.7, method='c', xc_code='d')
     with pytest.raises(KeyError):
         wrap.check_emb_arguments(args0)
     charge_args = dict(charges_coords=7)
@@ -101,15 +97,15 @@ def test_get_coulomb_potential():
 
 
 def test_pyscf_wrap_single_co_h2o():
-    from taco.methods.scf_pyscf import get_pyscf_molecule
     # Create real object and test the cheking functions
-    co = Molecule.from_data("""C        -3.6180905689    1.3768035675   -0.0207958979
-                               O        -4.7356838533    1.5255563000    0.1150239130""")
+    atom_co = """C        -3.6180905689    1.3768035675   -0.0207958979
+                 O        -4.7356838533    1.5255563000    0.1150239130"""
     basis = 'sto-3g'
+    co = gto.M(atom=atom_co, basis=basis)
     xc_code = 'LDA,VWN'
     method = 'dft'
-    args0 = {"mol": co, "basis": basis, "method": method, "xc_code": xc_code}
-    embs = {"mol": co, "basis": basis, "method": 'dft',
+    args0 = {"mol": co, "method": method, "xc_code": xc_code}
+    embs = {"mol": co, "method": 'dft',
             "xc_code": 'LDA,VWN', "t_code": 'LDA_K_TF,'}
     h2o_coords = np.array([[-7.9563726699, 1.4854060709, 0.1167920007],
                            [-6.9923165534, 1.4211335985, 0.1774706091],
@@ -122,15 +118,13 @@ def test_pyscf_wrap_single_co_h2o():
 
         return np.einsum('ab->a', r)
 
-    # Make molecule in pyscf
-    pyscfmol = get_pyscf_molecule(co, basis)
     # Construct grid for integration
-    grids = gen_grid.Grids(pyscfmol)
+    grids = gen_grid.Grids(co)
     grids.level = 4
     grids.build()
     grid_args = dict(points=grids.coords, weights=grids.weights)
     wrap1 = PyScfWrapSingle(args0, frag_charges, fn0, grid_args, embs)
-    emb_pot = wrap1.compute_embedding_potential()
+    #emb_pot = wrap1.compute_embedding_potential()
 
 
 if __name__ == "__main__":

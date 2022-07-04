@@ -5,12 +5,11 @@ import os
 import pytest
 import pandas
 import numpy as np
-import qcelemental as qcel
-from qcelemental.models import Molecule
 from pyscf import gto
 from pyscf.dft import gen_grid
 
 from taco.embedding.emb_pot import EmbPotBase
+from taco.data.units import BOHR
 from taco.embedding.pyscf_emb_pot import PyScfEmbPot, get_charges_and_coords
 from taco.embedding.scf_wrap import ScfWrap
 # from taco.embedding.pyscf_tddft import compute_emb_kernel
@@ -24,9 +23,8 @@ def test_get_charges_and_coords():
     a = """H    0.00000  0.0000  0.0000
            H    0.00000  0.0000  0.7140
         """
-    bohr2a = qcel.constants.conversion_factor("bohr", "angstrom")
     b = [('H', np.array([0.0000, 0.0000, 0.0000])),
-         ('H', np.array([0.00000, 0.0000, 0.714])/bohr2a)]
+         ('H', np.array([0.00000, 0.0000, 0.714])/BOHR)]
     mol1 = gto.M(atom=a, basis='3-21g')
     mol2 = gto.M(atom=b, basis='3-21g', unit='Bohr')
     c1, co1 = get_charges_and_coords(mol1)
@@ -128,9 +126,9 @@ def test_pyscf_embpot_hf_co_h2o_sto3g():
     np.testing.assert_allclose(ref_xc, matdic['v_nad_xc'], atol=1e-7)
     np.testing.assert_allclose(ref_t, matdic['v_nad_t'], atol=1e-7)
     np.testing.assert_allclose(ref_vJ, matdic['v_coulomb'], atol=1e-7)
-    np.testing.assert_allclose(ref_vNuc0, matdic['v0_nuc1'], atol=1e-7)
-    np.testing.assert_allclose(ref_vNuc1, matdic['v1_nuc0'], atol=1e-7)
-    np.testing.assert_allclose(ref_vNuc0+ref_t+ref_xc+ref_vJ, vemb, atol=1e-7)
+    np.testing.assert_allclose(ref_vNuc0, matdic['v0_nuc1'], atol=1e-6)
+    np.testing.assert_allclose(ref_vNuc1, matdic['v1_nuc0'], atol=1e-6)
+    np.testing.assert_allclose(ref_vNuc0+ref_t+ref_xc+ref_vJ, vemb, atol=1e-6)
 
 
 def test_pyscf_embpot_hf_co_h2o_sto3g_lyp():
@@ -160,10 +158,10 @@ def test_pyscf_embpot_hf_co_h2o_sto3g_lyp():
     ref_vNuc1 = np.loadtxt(cache.files["co_h2o_sto3g_vNuc1"]).reshape((nao_h2o, nao_h2o))
     np.testing.assert_allclose(ref_t, matdic['v_nad_t'], atol=1e-7)
     np.testing.assert_allclose(ref_vJ, matdic['v_coulomb'], atol=1e-7)
-    np.testing.assert_allclose(ref_vNuc0, matdic['v0_nuc1'], atol=1e-7)
-    np.testing.assert_allclose(ref_vNuc1, matdic['v1_nuc0'], atol=1e-7)
+    np.testing.assert_allclose(ref_vNuc0, matdic['v0_nuc1'], atol=1e-6)
+    np.testing.assert_allclose(ref_vNuc1, matdic['v1_nuc0'], atol=1e-6)
     np.testing.assert_allclose(ref_xc, matdic['v_nad_xc'], atol=5e-7)
-    np.testing.assert_allclose(ref_vNuc0+ref_t+ref_xc+ref_vJ, vemb, atol=5e-7)
+    np.testing.assert_allclose(ref_vNuc0+ref_t+ref_xc+ref_vJ, vemb, atol=1e-6)
 
 
 def test_scfwrap():
@@ -208,13 +206,14 @@ def test_scfwrap():
 
 def test_pyscf_wrap0():
     """Test basic functionality of PyScfWrap."""
-    mol = Molecule.from_data("""He 0 0 0""")
+    atom = """He 0 0 0"""
     basis = 'sto-3g'
+    mol = gto.M(atom=atom, basis=basis)
     dict0 = {'mol': 0}
-    args0 = {"mol": mol, "basis": basis, "method": 'adc'}
-    args1 = {"mol": mol, "basis": basis, "method": 'dft'}
-    embs0 = {"mol": mol, "basis": basis, "method": 'hf'}
-    embs1 = {"mol": mol, "basis": basis, "method": 'hf',
+    args0 = {"mol": mol, "method": 'adc'}
+    args1 = {"mol": mol, "method": 'dft'}
+    embs0 = {"mol": mol, "method": 'hf'}
+    embs1 = {"mol": mol, "method": 'hf',
              "xc_code": 'LDA,VWN', "t_code": 'LDA_K_TF,'}
     with pytest.raises(KeyError):
         PyScfWrap(dict0, embs0, embs1)
@@ -222,25 +221,27 @@ def test_pyscf_wrap0():
         PyScfWrap(embs0, dict0, embs1)
     with pytest.raises(ValueError):
         PyScfWrap(embs0, args1, embs1)
-    with pytest.raises(KeyError):
-        PyScfWrap(embs0, embs0, embs0)
     with pytest.raises(ValueError):
         PyScfWrap(args0, embs0, embs1)
+    with pytest.raises(KeyError):
+        PyScfWrap(embs0, embs0, embs0)
 
 
 def test_pyscf_wrap_hf_co_h2o_sto3g():
     """Test embedded HF-in-HF case."""
     # Compared with ScfWrap results
-    co = Molecule.from_data("""C        -3.6180905689    1.3768035675   -0.0207958979
-                               O        -4.7356838533    1.5255563000    0.1150239130""")
-    h2o = Molecule.from_data("""O  -7.9563726699    1.4854060709    0.1167920007
-                                H  -6.9923165534    1.4211335985    0.1774706091
-                                H  -8.1058463545    2.4422204631    0.1115993752""")
+    atom_co = """C        -3.6180905689    1.3768035675   -0.0207958979
+                 O        -4.7356838533    1.5255563000    0.1150239130"""
+    atom_h2o = """O  -7.9563726699    1.4854060709    0.1167920007
+             H  -6.9923165534    1.4211335985    0.1774706091
+             H  -8.1058463545    2.4422204631    0.1115993752"""
     basis = 'sto-3g'
+    co = gto.M(atom=atom_co, basis=basis)
+    h2o = gto.M(atom=atom_h2o, basis=basis)
     method = 'hf'
-    args0 = {"mol": co, "basis": basis, "method": method}
-    args1 = {"mol": h2o, "basis": basis, "method": method}
-    embs = {"mol": co, "basis": basis, "method": 'hf',
+    args0 = {"mol": co, "method": method}
+    args1 = {"mol": h2o, "method": method}
+    embs = {"mol": co, "method": 'hf',
             "xc_code": 'LDA,VWN', "t_code": 'LDA_K_TF,'}
     wrap = PyScfWrap(args0, args1, embs)
     vemb = wrap.compute_embedding_potential()
@@ -256,9 +257,9 @@ def test_pyscf_wrap_hf_co_h2o_sto3g():
     np.testing.assert_allclose(ref_fock_xc, matdic['v_nad_xc'], atol=1e-7)
     np.testing.assert_allclose(ref_fock_t, matdic['v_nad_t'], atol=1e-7)
     np.testing.assert_allclose(ref_fock_vJ, matdic['v_coulomb'], atol=1e-7)
-    np.testing.assert_allclose(ref_fock_vNuc0, matdic['v0_nuc1'], atol=1e-7)
-    np.testing.assert_allclose(ref_fock_vNuc1, matdic['v1_nuc0'], atol=1e-7)
-    np.testing.assert_allclose(ref_fock_vNuc0+ref_fock_t+ref_fock_xc+ref_fock_vJ, vemb, atol=1e-7)
+    np.testing.assert_allclose(ref_fock_vNuc0, matdic['v0_nuc1'], atol=1e-6)
+    np.testing.assert_allclose(ref_fock_vNuc1, matdic['v1_nuc0'], atol=1e-6)
+    np.testing.assert_allclose(ref_fock_vNuc0+ref_fock_t+ref_fock_xc+ref_fock_vJ, vemb, atol=1e-6)
     wrap.run_embedding()
     matdic = wrap.vemb_dict
     embdic = wrap.energy_dict
@@ -272,8 +273,8 @@ def test_pyscf_wrap_hf_co_h2o_sto3g():
     qchem_rho_A_Nuc_B = -21.1298173325
     qchem_rho_B_Nuc_A = -20.8957755874
     assert abs(qchem_rho_A_rho_B - embdic['rho0_rho1']) < 1e-6
-    assert abs(qchem_rho_A_Nuc_B - embdic['nuc0_rho1']) < 1e-6
-    assert abs(qchem_rho_B_Nuc_A - embdic['nuc1_rho0']) < 1e-6
+    assert abs(qchem_rho_A_Nuc_B - embdic['nuc0_rho1']) < 5e-6
+    assert abs(qchem_rho_B_Nuc_A - embdic['nuc1_rho0']) < 5e-6
     # DFT related terms
     qchem_int_ref_xc = -0.0011361532
     qchem_int_ref_t = 0.0022364179
@@ -292,18 +293,20 @@ def test_pyscf_wrap_hf_co_h2o_sto3g():
 
 
 def test_pyscf_wrap_hf_co_h2o_sto3g_lyp():
-    """Test embedded HF-in-HF case."""
+    """Test embedded HF-in-HF case with LYP functional."""
     # Compared with ScfWrap results
-    co = Molecule.from_data("""C        -3.6180905689    1.3768035675   -0.0207958979
-                               O        -4.7356838533    1.5255563000    0.1150239130""")
-    h2o = Molecule.from_data("""O  -7.9563726699    1.4854060709    0.1167920007
-                                H  -6.9923165534    1.4211335985    0.1774706091
-                                H  -8.1058463545    2.4422204631    0.1115993752""")
+    atom_co = """C        -3.6180905689    1.3768035675   -0.0207958979
+                 O        -4.7356838533    1.5255563000    0.1150239130"""
+    atom_h2o = """O  -7.9563726699    1.4854060709    0.1167920007
+                  H  -6.9923165534    1.4211335985    0.1774706091
+                  H  -8.1058463545    2.4422204631    0.1115993752"""
     basis = 'sto-3g'
+    co = gto.M(atom=atom_co, basis=basis)
+    h2o = gto.M(atom=atom_h2o, basis=basis)
     method = 'hf'
-    args0 = {"mol": co, "basis": basis, "method": method}
-    args1 = {"mol": h2o, "basis": basis, "method": method}
-    embs = {"mol": co, "basis": basis, "method": 'hf',
+    args0 = {"mol": co, "method": method}
+    args1 = {"mol": h2o, "method": method}
+    embs = {"mol": co, "method": 'hf',
             "xc_code": 'LDA,LYP', "t_code": 'LDA_K_TF,'}
     wrap = PyScfWrap(args0, args1, embs)
     vemb = wrap.compute_embedding_potential()
@@ -319,10 +322,10 @@ def test_pyscf_wrap_hf_co_h2o_sto3g_lyp():
     np.testing.assert_allclose(ref_fock_xc, matdic['v_nad_xc'], atol=5e-7)
     np.testing.assert_allclose(ref_fock_t, matdic['v_nad_t'], atol=1e-7)
     np.testing.assert_allclose(ref_fock_vJ, matdic['v_coulomb'], atol=1e-7)
-    np.testing.assert_allclose(ref_fock_vNuc0, matdic['v0_nuc1'], atol=1e-7)
-    np.testing.assert_allclose(ref_fock_vNuc1, matdic['v1_nuc0'], atol=1e-7)
+    np.testing.assert_allclose(ref_fock_vNuc0, matdic['v0_nuc1'], atol=1e-6)
+    np.testing.assert_allclose(ref_fock_vNuc1, matdic['v1_nuc0'], atol=1e-6)
     vemb_ref = ref_fock_vNuc0+ref_fock_t+ref_fock_xc+ref_fock_vJ
-    np.testing.assert_allclose(vemb_ref, vemb, atol=5e-7)
+    np.testing.assert_allclose(vemb_ref, vemb, atol=1e-6)
     wrap.run_embedding()
     matdic = wrap.vemb_dict
     embdic = wrap.energy_dict
@@ -336,8 +339,8 @@ def test_pyscf_wrap_hf_co_h2o_sto3g_lyp():
     qchem_rho_A_Nuc_B = -21.1298556338
     qchem_rho_B_Nuc_A = -20.8957758961
     assert abs(qchem_rho_A_rho_B - embdic['rho0_rho1']) < 1e-6
-    assert abs(qchem_rho_A_Nuc_B - embdic['nuc0_rho1']) < 1e-6
-    assert abs(qchem_rho_B_Nuc_A - embdic['nuc1_rho0']) < 1e-6
+    assert abs(qchem_rho_A_Nuc_B - embdic['nuc0_rho1']) < 5e-6
+    assert abs(qchem_rho_B_Nuc_A - embdic['nuc1_rho0']) < 5e-6
     # DFT related terms
     qchem_int_ref_xc = -0.0017012845
     qchem_int_ref_t = 0.0022364179
@@ -356,18 +359,20 @@ def test_pyscf_wrap_hf_co_h2o_sto3g_lyp():
 
 
 def test_pyscf_wrap_hf_co_h2o_sto3g_pbe():
-    """Test embedded HF-in-HF case."""
+    """Test embedded HF-in-HF case with PBE functional."""
     # Compared with ScfWrap results
-    co = Molecule.from_data("""C        -3.6180905689    1.3768035675   -0.0207958979
-                               O        -4.7356838533    1.5255563000    0.1150239130""")
-    h2o = Molecule.from_data("""O  -7.9563726699    1.4854060709    0.1167920007
-                                H  -6.9923165534    1.4211335985    0.1774706091
-                                H  -8.1058463545    2.4422204631    0.1115993752""")
+    atom_co = """C        -3.6180905689    1.3768035675   -0.0207958979
+                 O        -4.7356838533    1.5255563000    0.1150239130"""
+    atom_h2o = """O  -7.9563726699    1.4854060709    0.1167920007
+                  H  -6.9923165534    1.4211335985    0.1774706091
+                  H  -8.1058463545    2.4422204631    0.1115993752"""
     basis = 'sto-3g'
+    co = gto.M(atom=atom_co, basis=basis)
+    h2o = gto.M(atom=atom_h2o, basis=basis)
     method = 'hf'
-    args0 = {"mol": co, "basis": basis, "method": method}
-    args1 = {"mol": h2o, "basis": basis, "method": method}
-    embs = {"mol": co, "basis": basis, "method": 'hf',
+    args0 = {"mol": co, "method": method}
+    args1 = {"mol": h2o, "method": method}
+    embs = {"mol": co, "method": 'hf',
             "xc_code": 'PBE', "t_code": 'LDA_K_TF,'}
     wrap = PyScfWrap(args0, args1, embs)
     vemb = wrap.compute_embedding_potential()
@@ -383,8 +388,8 @@ def test_pyscf_wrap_hf_co_h2o_sto3g_pbe():
     np.testing.assert_allclose(ref_fock_xc, matdic['v_nad_xc'], atol=5e-6)
     np.testing.assert_allclose(ref_fock_t, matdic['v_nad_t'], atol=1e-7)
     np.testing.assert_allclose(ref_fock_vJ, matdic['v_coulomb'], atol=1e-7)
-    np.testing.assert_allclose(ref_fock_vNuc0, matdic['v0_nuc1'], atol=1e-7)
-    np.testing.assert_allclose(ref_fock_vNuc1, matdic['v1_nuc0'], atol=1e-7)
+    np.testing.assert_allclose(ref_fock_vNuc0, matdic['v0_nuc1'], atol=1e-6)
+    np.testing.assert_allclose(ref_fock_vNuc1, matdic['v1_nuc0'], atol=1e-6)
     vemb_ref = ref_fock_vNuc0+ref_fock_t+ref_fock_xc+ref_fock_vJ
     np.testing.assert_allclose(vemb_ref, vemb, atol=5e-6)
     wrap.run_embedding()
@@ -400,8 +405,8 @@ def test_pyscf_wrap_hf_co_h2o_sto3g_pbe():
     qchem_rho_A_Nuc_B = -21.1297805899
     qchem_rho_B_Nuc_A = -20.8957758961
     assert abs(qchem_rho_A_rho_B - embdic['rho0_rho1']) < 1e-6
-    assert abs(qchem_rho_A_Nuc_B - embdic['nuc0_rho1']) < 1e-6
-    assert abs(qchem_rho_B_Nuc_A - embdic['nuc1_rho0']) < 1e-6
+    assert abs(qchem_rho_A_Nuc_B - embdic['nuc0_rho1']) < 5e-6
+    assert abs(qchem_rho_B_Nuc_A - embdic['nuc1_rho0']) < 5e-6
     # DFT related terms
     qchem_int_ref_xc = -0.0006809998
     qchem_int_ref_t = 0.0022364195
@@ -420,19 +425,21 @@ def test_pyscf_wrap_hf_co_h2o_sto3g_pbe():
 
 
 def test_pyscf_wrap_dft_co_h2o_sto3g():
-    """Test embedded HF-in-HF case."""
+    """Test embedded DFT-in-DFT case."""
     # Compared with QChem results
-    co = Molecule.from_data("""C        -3.6180905689    1.3768035675   -0.0207958979
-                               O        -4.7356838533    1.5255563000    0.1150239130""")
-    h2o = Molecule.from_data("""O  -7.9563726699    1.4854060709    0.1167920007
-                                H  -6.9923165534    1.4211335985    0.1774706091
-                                H  -8.1058463545    2.4422204631    0.1115993752""")
+    atom_co = """C        -3.6180905689    1.3768035675   -0.0207958979
+                 O        -4.7356838533    1.5255563000    0.1150239130"""
+    atom_h2o = """O  -7.9563726699    1.4854060709    0.1167920007
+                  H  -6.9923165534    1.4211335985    0.1774706091
+                  H  -8.1058463545    2.4422204631    0.1115993752"""
     basis = 'sto-3g'
+    co = gto.M(atom=atom_co, basis=basis)
+    h2o = gto.M(atom=atom_h2o, basis=basis)
     xc_code = 'LDA,VWN'
     method = 'dft'
-    args0 = {"mol": co, "basis": basis, "method": method, "xc_code": xc_code}
-    args1 = {"mol": h2o, "basis": basis, "method": method, "xc_code": xc_code}
-    embs = {"mol": co, "basis": basis, "method": 'dft',
+    args0 = {"mol": co, "method": method, "xc_code": xc_code}
+    args1 = {"mol": h2o, "method": method, "xc_code": xc_code}
+    embs = {"mol": co, "method": 'dft',
             "xc_code": 'LDA,VWN', "t_code": 'LDA_K_TF,'}
     wrap = PyScfWrap(args0, args1, embs)
     wrap.run_embedding()
@@ -500,16 +507,18 @@ def test_postscfwrap():
 def test_postscfwrap_co_h2o():
     """Test energy and array part of the class."""
     # Compared with ScfWrap results
-    co = Molecule.from_data("""C        -3.6180905689    1.3768035675   -0.0207958979
-                               O        -4.7356838533    1.5255563000    0.1150239130""")
-    h2o = Molecule.from_data("""O  -7.9563726699    1.4854060709    0.1167920007
-                                H  -6.9923165534    1.4211335985    0.1774706091
-                                H  -8.1058463545    2.4422204631    0.1115993752""")
+    atom_co = """C        -3.6180905689    1.3768035675   -0.0207958979
+                 O        -4.7356838533    1.5255563000    0.1150239130"""
+    atom_h2o = """O  -7.9563726699    1.4854060709    0.1167920007
+                  H  -6.9923165534    1.4211335985    0.1774706091
+                  H  -8.1058463545    2.4422204631    0.1115993752"""
     basis = 'sto-3g'
+    co = gto.M(atom=atom_co, basis=basis)
+    h2o = gto.M(atom=atom_h2o, basis=basis)
     method = 'hf'
-    args0 = {"mol": co, "basis": basis, "method": method}
-    args1 = {"mol": h2o, "basis": basis, "method": method}
-    embs = {"mol": co, "basis": basis, "method": 'hf',
+    args0 = {"mol": co, "method": method}
+    args1 = {"mol": h2o, "method": method}
+    embs = {"mol": co, "method": 'hf',
             "xc_code": 'LDA,VWN', "t_code": 'LDA_K_TF,'}
     wrap = PyScfWrap(args0, args1, embs)
     wrap.run_embedding()
@@ -562,12 +571,12 @@ def compute_emb_kernel():
         compute_emb_kernel(pot1, dm1, dm0)
     # Use wrap
     # Compared with ScfWrap results
-    mol = Molecule.from_data(mol0.atom)
-    mol1 = Molecule.from_data("""He  1.00000    0.00000    0.0000000""")
+    mol = mol0
+    mol1 = gto.M(atom="He  1.00000    0.00000    0.0000000", basis=basis)
     method = 'hf'
-    args0 = {"mol": mol, "basis": basis, "method": method}
-    args1 = {"mol": mol1, "basis": basis, "method": method}
-    embs = {"mol": mol, "basis": basis, "method": 'hf',
+    args0 = {"mol": mol, "method": method}
+    args1 = {"mol": mol1, "method": method}
+    embs = {"mol": mol, "method": 'hf',
             "xc_code": 'LDA,VWN', "t_code": 'LDA_K_TF,'}
     wrap = PyScfWrap(args0, args1, embs)
     wrap.run_embedding()

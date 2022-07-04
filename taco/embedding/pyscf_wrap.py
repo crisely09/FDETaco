@@ -12,17 +12,15 @@ def get_pyscf_method(args):
     ----------
     args : dict
         Parameters to initialize a method object. It must contain:
-        mol : qcelement.models.Molecule
-            Molecule object.
+        mol : gto.Mole
+            Molecule object from PySCF.
         method : str
             Method name. Available options at the moment:
             HF or DFT.
-        basis : str
-            Basis set name. Any of the PySCF basis sets.
         xc_code : str
             Density functional code, only needed for DFT methods.
     """
-    return ScfPyScf(args['mol'], args['basis'], args['method'], args['xc_code'])
+    return ScfPyScf(args['mol'], args['method'], args['xc_code'])
 
 
 class PyScfWrap(ScfWrap):
@@ -59,10 +57,10 @@ class PyScfWrap(ScfWrap):
         ----------
         frag_args : dict
             Parameters for individual fragments:
-            molecule, method, basis, xc_code, etc.
+            molecule, method, xc_code, etc.
         emb_args : dict
             Parameters for the embedding calculation:
-            method, basis, x_func, c_func, t_func.
+            method, x_func, c_func, t_func.
 
         """
         ScfWrap.__init__(self, frag0_args, frag1_args, emb_args)
@@ -78,14 +76,14 @@ class PyScfWrap(ScfWrap):
         ----------
         frag_args : dict
             Parameters for individual fragments:
-            molecule, method, basis.
+            molecule, method.
         """
         self.check_basic_arguments(frag0_args)
         self.check_basic_arguments(frag1_args)
         self.method0 = get_pyscf_method(frag0_args)
         self.method1 = get_pyscf_method(frag1_args)
-        self.mol0 = self.method0.mol_pyscf
-        self.mol1 = self.method1.mol_pyscf
+        self.mol0 = self.method0.mol
+        self.mol1 = self.method1.mol
 
     def compute_embedding_potential(self):
         """Compute embedding potential.

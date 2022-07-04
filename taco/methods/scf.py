@@ -2,8 +2,7 @@
 """
 FDE SCF Methods Base Class.
 """
-
-from qcelemental.models import Molecule
+from pyscf import gto
 
 
 class ScfMethod():
@@ -38,11 +37,11 @@ class ScfMethod():
 
         Parameters
         ----------
-        mol : qcelemental Molecule object
-            Molecule information.
+        mol : PySCF gto.M object
+            Contains molecule information: geometry, basis, spin, charge.
         """
-        if not isinstance(mol, Molecule):
-            raise TypeError('Molecule object should be instance of qcelemental.models.Molecule')
+        if not isinstance(mol, gto.Mole):
+            raise TypeError('Molecule object should be instance of gto.M')
         self.mol = mol
         self.new = True
         self.density = None
@@ -51,7 +50,7 @@ class ScfMethod():
     @property
     def restricted(self):
         """Whether it is Restricted case."""
-        return self.mol.molecular_multiplicity == 1
+        return self.mol.spin == 0
 
     # TODO: probably replace with a @cached_property
     def get_density(self):

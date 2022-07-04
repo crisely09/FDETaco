@@ -74,8 +74,8 @@ setup(
     include_package_data=True,
 
     # Allows `setup.py test` to work correctly with pytest
-    install_requires=['pybind11>=2.3'],
-    setup_requires=['pybind11>=2.3'] + pytest_runner,
+    install_requires=['pyscf>=2.0'],
+    setup_requires=['pyscf>=2.0'] + pytest_runner,
 
     # Additional entries you may want simply uncomment the lines you want and fill in the data
     # url='http://www.my_package.com',  # Website

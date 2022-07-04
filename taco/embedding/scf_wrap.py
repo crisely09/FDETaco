@@ -70,8 +70,6 @@ class ScfWrap():
             raise KeyError("Missing to specify `molecule`.")
         if 'method' not in args:
             raise KeyError("Missing to specify `method`.")
-        if 'basis' not in args:
-            raise KeyError("Missing to specify `basis`.")
         if 'xc_code' not in args:
             args['xc_code'] = None
 

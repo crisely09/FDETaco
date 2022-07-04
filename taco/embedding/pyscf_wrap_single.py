@@ -8,7 +8,23 @@ from pyscf.dft.numint import eval_ao, eval_rho, eval_mat
 from taco.embedding.scf_wrap_single import ScfWrapSingle
 from taco.embedding.pyscf_wrap import get_pyscf_method
 from taco.embedding.pyscf_emb_pot import get_charges_and_coords
-from taco.embedding.cc_gridfns import coulomb_potential_grid, nuclear_attraction_energy
+
+
+def compute_rxc_potential(mol0, dm0, mol1, dm1, points, xc_code):
+    # Evaluate electron densities and derivatives
+    # rho[0] = rho
+    # rho[1-3] = gradxyz
+    # rho[4] = lap. rho
+    rho0_devs = get_density_from_dm(mol0, dm0, points, deriv=3, xctype='meta-GGA')
+    rho1_devs = get_density_from_dm(mol1, dm1, points, deriv=3, xctype='meta-GGA')
+    # DFT nad potential
+    rho_tot = rho0_devs[0] + rho1_devs[0]
+    # XC term
+    exc_tot, vxc_tot = compute_ldacorr_pyscf(rho_tot, xc_code)
+    exc_0, vxc_0 = compute_ldacorr_pyscf(rho0_devs[0], xc_code)
+    exc_1, vxc_1 = compute_ldacorr_pyscf(rho1_devs[0], xc_code)
+    vxc_nad = vxc_tot - vxc_0
+    return vxc_nad
 
 
 def get_dft_grid_stuff(code, rho_both, rho1, rho2):
@@ -28,6 +44,30 @@ def get_dft_grid_stuff(code, rho_both, rho1, rho2):
     exc2, vxc2, fxc2, kxc2 = libxc.eval_xc(code, rho1)
     exc3, vxc3, fxc3, kxc3 = libxc.eval_xc(code, rho2)
     return (exc, exc2, exc3), (vxc, vxc2, vxc3)
+
+
+def get_coulomb_slow(rho0, rho1, points0, points1):
+    """Evaluate the Coulomb repulstion on the points0 grid.
+
+    Parameters
+    ----------
+    rho0, rho1 : np.array
+        Density of fragment0 evaluated on points0/1.
+    points0, points1 : np.ndarray
+        Coordinates on space where the densities are evaluated, in Bohr.
+
+    Returns
+    -------
+    coul : np.ndarray
+        Coulomb repulsion on grid points0.
+    """
+    coul = np.zeros_like(rho0)
+    for i, p0 in enumerate(points0):
+        for j, p1 in enumerate(points1):
+            d = np.linalg.norm(p0-p1)
+            if d > 1e-6:
+                coul[i] = rho0[i]*rho1[j]/d
+    return coul
 
 
 def get_coulomb_repulsion(mol, dm, grid):
@@ -50,7 +90,37 @@ def get_coulomb_repulsion(mol, dm, grid):
     return v_coul
 
 
-def get_electrostatic_potentials(mol0, rho0, dens_func, frag1_charges, grid_args):
+def get_electrostatic_potentials_nodm(mol0, rho0, dens_func1, frag1_charges, grid_args):
+    """Compute nuclear attraction between fragments.
+
+    Parameters
+    ----------
+    mol1, mol2 : gto.M
+        Molecule PySCF objects.
+    """
+    # Construct grid for complex
+    ao_mol0 = eval_ao(mol0, grid_args["points"], deriv=0)
+    # Evaluate Coulomb repulsion potential
+    # Generate other integration grid to evaluate the potential
+    points1 = grid_args["points"] + np.array([0.2, 0.2, 0.2])
+    rho1 = dens_func1(points1)
+    coul = get_coulomb_slow(rho0, rho1, grid_args["points"], points1)
+    v_coulomb = eval_mat(mol0, ao_mol0, grid_args["weights"], rho0, coul, xctype='LDA')
+
+    # Nuclear-electron attraction integrals
+    mol0_charges, mol0_coords = get_charges_and_coords(mol0)
+    mol1_charges = frag1_charges["charges"]
+    mol1_coords = frag1_charges["charges_coords"]
+    v0_nuc1 = 0
+    for i, q in enumerate(mol1_charges):
+        mol0.set_rinv_origin(mol1_coords[i])
+        v0_nuc1 += mol0.intor('int1e_rinv') * -q
+    # Create dictionary
+    elst_potentials = dict(v_coulomb=v_coulomb, v0_nuc1=v0_nuc1)
+    return elst_potentials
+
+
+def get_electrostatic_potentials(mol0, rho0, dm1, dens_func, frag1_charges, grid_args):
     """Compute nuclear attraction between fragments.
 
     Parameters
@@ -64,10 +134,7 @@ def get_electrostatic_potentials(mol0, rho0, dens_func, frag1_charges, grid_args
     # Generate other integration grid to evaluate the potential
     points1 = grid_args["points"] + np.array([0.2, 0.2, 0.2])
     rho1 = dens_func(points1)
-    v_coul = coulomb_potential_grid(grid_args["points"], points1, grid_args["weights"], rho1)
-
-    # Integrate with mol0 AOs
-    v_coulomb = eval_mat(mol0, ao_mol0, grid_args["weights"], rho0, v_coul, xctype='LDA')
+    v_coulomb = get_coulomb_repulsion(mol0, dm1)
 
     # Nuclear-electron attraction integrals
     mol0_charges, mol0_coords = get_charges_and_coords(mol0)
@@ -183,6 +250,125 @@ def compute_nuclear_repulsion(charges1, coords1, charges2, coords2):
     return result
 
 
+def compute_uxc_potential(mol, xc_code, dms, relativity=0, hermi=0,
+                          max_memory=2000, verbose=None):
+    '''Calculate UKS XC functional and potential matrix on given meshgrids
+    for a set of density matrices
+
+    Args:
+        mol : an instance of :class:`Mole`
+
+        grids : an instance of :class:`Grids`
+            grids.coords and grids.weights are needed for coordinates and weights of meshgrids.
+        xc_code : str
+            XC functional description.
+            See :func:`parse_xc` of pyscf/dft/libxc.py for more details.
+        dms : a list of 2D arrays
+            A list of density matrices, stored as (alpha,alpha,...,beta,beta,...)
+
+    Kwargs:
+        hermi : int
+            Input density matrices symmetric or not
+        max_memory : int or float
+            The maximum size of cache to use (in MB).
+
+    Returns:
+        nelec, excsum, vmat.
+        nelec is the number of (alpha,beta) electrons generated by numerical integration.
+        excsum is the XC functional value.
+        vmat is the XC potential matrix for (alpha,beta) spin.
+
+    Examples:
+
+    >>> from pyscf import gto, dft
+    >>> mol = gto.M(atom='H 0 0 0; H 0 0 1.1')
+    >>> grids = dft.gen_grid.Grids(mol)
+    >>> grids.coords = numpy.random.random((100,3))  # 100 random points
+    >>> grids.weights = numpy.random.random(100)
+    >>> nao = mol.nao_nr()
+    >>> dm = numpy.random.random((2,nao,nao))
+    >>> ni = dft.numint.NumInt()
+    >>> nelec, exc, vxc = ni.nr_uks(mol, grids, 'lda,vwn', dm)
+    '''
+    xctype = ni._xc_type(xc_code)
+    ni = dft.numint.NumInt()
+
+    shls_slice = (0, mol.nbas)
+    ao_loc = mol.ao_loc_nr()
+
+    dma, dmb = _format_uks_dm(dms)
+    nao = dma.shape[-1]
+    make_rhoa, nset = ni._gen_rho_evaluator(mol, dma, hermi)[:2]
+    make_rhob       = ni._gen_rho_evaluator(mol, dmb, hermi)[0]
+
+    nelec = numpy.zeros((2,nset))
+    excsum = numpy.zeros(nset)
+    vmat = numpy.zeros((2,nset,nao,nao), dtype=numpy.result_type(dma, dmb))
+    aow = None
+    if xctype == 'LDA':
+        ao_deriv = 0
+        for ao, mask, weight, coords \
+                in ni.block_loop(mol, grids, nao, ao_deriv, max_memory):
+            aow = numpy.ndarray(ao.shape, order='F', buffer=aow)
+            for idm in range(nset):
+                rho_a = make_rhoa(idm, ao, mask, xctype)
+                rho_b = make_rhob(idm, ao, mask, xctype)
+                exc, vxc = ni.eval_xc(xc_code, (rho_a, rho_b), spin=1,
+                                      relativity=relativity, deriv=1,
+                                      verbose=verbose)[:2]
+                vrho = vxc[0]
+                den = rho_a * weight
+                nelec[0,idm] += den.sum()
+                excsum[idm] += numpy.dot(den, exc)
+                den = rho_b * weight
+                nelec[1,idm] += den.sum()
+                excsum[idm] += numpy.dot(den, exc)
+
+                # *.5 due to +c.c. in the end
+                #:aow = numpy.einsum('pi,p->pi', ao, .5*weight*vrho[:,0], out=aow)
+                aow = _scale_ao(ao, .5*weight*vrho[:,0], out=aow)
+                vmat[0,idm] += _dot_ao_ao(mol, ao, aow, mask, shls_slice, ao_loc)
+                #:aow = numpy.einsum('pi,p->pi', ao, .5*weight*vrho[:,1], out=aow)
+                aow = _scale_ao(ao, .5*weight*vrho[:,1], out=aow)
+                vmat[1,idm] += _dot_ao_ao(mol, ao, aow, mask, shls_slice, ao_loc)
+                rho_a = rho_b = exc = vxc = vrho = None
+    elif xctype == 'GGA':
+        ao_deriv = 1
+        for ao, mask, weight, coords \
+                in ni.block_loop(mol, grids, nao, ao_deriv, max_memory):
+            aow = numpy.ndarray(ao[0].shape, order='F', buffer=aow)
+            for idm in range(nset):
+                rho_a = make_rhoa(idm, ao, mask, xctype)
+                rho_b = make_rhob(idm, ao, mask, xctype)
+                exc, vxc = ni.eval_xc(xc_code, (rho_a, rho_b), spin=1,
+                                      relativity=relativity, deriv=1,
+                                      verbose=verbose)[:2]
+                den = rho_a[0]*weight
+                nelec[0,idm] += den.sum()
+                excsum[idm] += numpy.dot(den, exc)
+                den = rho_b[0]*weight
+                nelec[1,idm] += den.sum()
+                excsum[idm] += numpy.dot(den, exc)
+
+                wva, wvb = _uks_gga_wv0((rho_a,rho_b), vxc, weight)
+                #:aow = numpy.einsum('npi,np->pi', ao, wva, out=aow)
+                aow = _scale_ao(ao, wva, out=aow)
+                vmat[0,idm] += _dot_ao_ao(mol, ao[0], aow, mask, shls_slice, ao_loc)
+                #:aow = numpy.einsum('npi,np->pi', ao, wvb, out=aow)
+                aow = _scale_ao(ao, wvb, out=aow)
+                vmat[1,idm] += _dot_ao_ao(mol, ao[0], aow, mask, shls_slice, ao_loc)
+                rho_a = rho_b = exc = vxc = wva = wvb = None
+
+    for i in range(nset):
+        vmat[0,i] = vmat[0,i] + vmat[0,i].conj().T
+        vmat[1,i] = vmat[1,i] + vmat[1,i].conj().T
+    if isinstance(dma, numpy.ndarray) and dma.ndim == 2:
+        vmat = vmat[:,0]
+        nelec = nelec.reshape(2)
+        excsum = excsum[0]
+    return nelec, excsum, vmat
+
+
 class PyScfWrapSingle(ScfWrapSingle):
     """PySCF wrapper for embedding calculations.
 
@@ -245,7 +431,7 @@ class PyScfWrapSingle(ScfWrapSingle):
         """
         self.check_qc_arguments(frag_args)
         self.method = get_pyscf_method(frag_args)
-        self.mol = self.method.mol_pyscf
+        self.mol = self.method.mol
 
     def compute_embedding_potential(self):
         """Compute embedding potential.
@@ -267,8 +453,8 @@ class PyScfWrapSingle(ScfWrapSingle):
         self.energy_dict["exc_nad"] = exc_nad
         self.energy_dict["et_nad"] = et_nad
         # Electrostatic part
-        elst_potentials = get_electrostatic_potentials(self.mol, rho0, self.dens1_func,
-                                                       self.frag1_charges, self.grid_args)
+        elst_potentials = get_electrostatic_potentials_nodm(self.mol, rho0, self.dens1_func,
+                                                            self.frag1_charges, self.grid_args)
         v_coulomb = elst_potentials["v_coulomb"]
         v0_nuc1 = elst_potentials["v0_nuc1"]
         # Nuclear-electron integrals

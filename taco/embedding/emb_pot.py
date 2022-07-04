@@ -121,7 +121,7 @@ class EmbPotBase():
 
         Returns
         -------
-        vxc_nad : np.ndarray(NAO,NAO)
+        vxct_nad : np.ndarray(NAO,NAO)
             Non-additive Exchange-Correlation + Kinetic potential.
 
         """

@@ -164,7 +164,7 @@ if __name__ == "__main__":
     print(v2xc)
     print("one more!!")
     print(v3xc)
-    print(2.0*np.einsum('ab,ba', v1xc, dm0))
-    print(2.0*np.einsum('ab,ba', v2xc, dm0))
+    print(np.einsum('ab,ba', v1xc, dm0))
+    print(np.einsum('ab,ba', v2xc, dm0))
 
     # fxc, ft = compute_emb_kernel(emb_pot, dm0, dm1)

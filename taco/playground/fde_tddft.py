@@ -7,64 +7,9 @@ from pyscf.dft.numint import eval_ao, eval_rho, eval_mat
 from pyscf.dft import gen_grid, libxc
 
 from taco.testdata.cache import cache
-
-
-def get_charges_and_coords(mol):
-    """Return arrays with charges and coordinates."""
-    bohr2a = 0.52917721067
-    coords = []
-    charges = []
-    atm_str = mol.atom.split()
-    for i in range(mol.natm):
-        tmp = [float(f)/bohr2a for f in atm_str[i*4+1:(i*4)+4]]
-        coords.append(tmp)
-        charges.append(mol._atm[i][0])
-    coords = np.array(coords)
-    charges = np.array(charges, dtype=int)
-    return charges, coords
-
-
-def get_coulomb(mol1, mol2, dm2):
-    # Coulomb repulsion
-    mol1234 = mol2 + mol2 + mol1 + mol1
-    shls_slice = (0, mol2.nbas,
-                  mol2.nbas, mol2.nbas+mol2.nbas,
-                  mol2.nbas+mol2.nbas, mol2.nbas+mol2.nbas+mol1.nbas,
-                  mol2.nbas+mol2.nbas+mol1.nbas, mol1234.nbas)
-    eris = mol1234.intor('int2e', shls_slice=shls_slice)
-    v_coulomb = np.einsum('ab,abcd->cd', dm2, eris)
-    return v_coulomb
-
-
-def get_attraction_potential(mol1, mol2):
-    # Nuclear-electron attraction integrals
-    mol1_charges, mol1_coords = get_charges_and_coords(mol1)
-    mol2_charges, mol2_coords = get_charges_and_coords(mol2)
-    vAnucB = 0
-    for i, q in enumerate(mol2_charges):
-        mol1.set_rinv_origin(mol2_coords[i])
-        vAnucB += mol1.intor('int1e_rinv') * -q
-
-    vBnucA = 0
-    for i, q in enumerate(mol1_charges):
-        mol2.set_rinv_origin(mol1_coords[i])
-        vBnucA += mol2.intor('int1e_rinv') * -q
-    return vAnucB, vBnucA
-
-
-def get_dft_grid_stuff(code, rho_both, rho1, rho2):
-    # Evaluate energy densities and potentials on a grid
-    exc, vxc, fxc, kxc = libxc.eval_xc(code, rho_both, 0, 0, 2, 0)
-    exc2, vxc2, fxc2, kxc2 = libxc.eval_xc(code, rho1, 0, 0, 2, 0)
-    exc3, vxc3, fxc3, kxc3 = libxc.eval_xc(code, rho2, 0, 0, 2, 0)
-    return (exc, exc2, exc3), (vxc, vxc2, vxc3), (fxc, fxc2, fxc3)
-
-
-def get_nad_energy(grids, energies, rho_both, rho1, rho2):
-    e_nad = np.dot(rho_both*grids.weights, energies[0])
-    e_nad -= np.dot(rho1*grids.weights, energies[1])
-    e_nad -= np.dot(rho2*grids.weights, energies[2])
-    return e_nad
+from taco.embedding.pyscf_emb_pot import get_charges_and_coords, compute_coulomb_potential 
+from taco.embedding.pyscf_emb_pot import compute_attraction_potential, get_dft_grid_stuff
+from taco.embedding.pyscf_emb_pot import get_nad_energy
 
 
 def run_co_h2o_pyscf_tddft(ibasis, return_matrices=False):
@@ -143,10 +88,10 @@ def run_co_h2o_pyscf_tddft(ibasis, return_matrices=False):
     fock_emb_t = eval_mat(co, ao_co, grids.weights, rho_co, vt_emb, xctype='LDA')
 
     # Electrostatic part
-    v_coulomb = get_coulomb(co, h2o, dmb)
+    v_coulomb = compute_coulomb_potential(co, h2o, dmb)
 
     # Nuclear-electron integrals
-    vAnucB, vBnucA = get_attraction_potential(co, h2o)
+    vAnucB, vBnucA = compute_attraction_potential(co, h2o)
 
     # Perform the DFT-in-DFT embedding
     # Modify Fock matrix
